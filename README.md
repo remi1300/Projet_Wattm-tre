@@ -23,5 +23,14 @@ Concernant l'ESP32 :
 * "WiFi.h"
 * "esp_wpa2.h"
 
+## Connection au WIFI 
+#define EAP_IDENTITY "ewan.michellon@etu.univ-amu.fr"
+#define EAP_PASSWORD "!"
+#define EAP_USERNAME "ewan.michellon@etu.univ-amu.fr"
+const char* ssid = "eduroam";
+const char* ssid = "eduroam";
+## Utilisation du MQTT
+## Calibration des capteurs 
+## Traitement 
 ## Affichage 
 Les valeurs récuperées avec le programme vont être envoyées sur un Node-red. 
