@@ -1,9 +1,9 @@
 # Projet Wattmètre 
-![Logo de mon domaine](https://mondomaine.fr/logo.png) <br>
+![image](https://aircarto.fr/images/ModuleAir_InstaWhite.jpg) <br>
 <br>
 Ce projet réalisé par des étudiants à pour objectif de réaliser un Wattmètre à partir d'un ampèrmetre et un d'un voltmètre. 
 L'association de ces deux capteurs de courant et tension altenative permet d'otenir une valeur de puissance. 
-
+![Logo de mon domaine](https://mondomaine.fr/logo.png)
 
 ## Materiel utilisé 
 * ESP32
