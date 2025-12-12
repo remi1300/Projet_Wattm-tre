@@ -1,0 +1,152 @@
+#include <Arduino.h>
+#include "PubSubClient.h"
+#include "WiFi.h"
+#include "esp_wpa2.h"
+
+// ... (Vos configurations WiFi et MQTT restent identiques) ...
+#define EAP_IDENTITY ""
+#define EAP_PASSWORD ""
+#define EAP_USERNAME ""
+const char* ssid = "eduroam";
+const char *mqtt_broker = "147.94.219.47";
+const int mqtt_port = 1883;
+
+// Topics
+const char *topic_I_eff = "courrantefficace";
+const char *topic_U_eff = "tensionefficace";
+const char *topic_Phase = "dephasage";          
+const char *topic_P_app = "puissanceapparente";
+const char *topic_P_act = "puissanceactive";    
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+//--------------------------------------------------------Capteurs & Calibration--------------------------------------------------------------//
+const int Pin_Voltage = 34;
+const int Pin_Current = 35;
+
+// --- CORRECTION 1 : L'INVERSION DE POLARITÉ ---
+// J'ai mis un signe MOINS devant le facteur courant.
+// Cela inverse mathématiquement le sens du courant pour que la puissance devienne positive.
+// Ajustez 0.0161 selon votre pince (20A/1V ou 30A/1V...)
+const float FACTOR_CURRENT = -0.0161;
+
+// Ajustez ce facteur avec un multimètre (Tension Réelle / Tension lue par ESP)
+const float FACTOR_VOLTAGE = 0.13;
+
+// --- CORRECTION 2 : CALIBRATION DE PHASE ---
+// Vous aviez 171°. Après inversion du signe, vous aurez environ 9° (180-171).
+// Mettez ici la valeur de l'erreur résiduelle que vous observez sur une charge résistive.
+// Si le code affiche 9.00°, mettez 9.0 ici pour le remettre à 0.
+const float PHASE_ERROR_OFFSET = 9.0;
+
+const int N = 100; // Echantillons
+int Uraw[N];
+int Iraw[N];
+
+// ... (Le setup reste identique, je le raccourcis pour la lisibilité) ...
+void setup() {
+  Serial.begin(115200);
+  pinMode(Pin_Voltage, INPUT);
+  pinMode(Pin_Current, INPUT);
+ 
+  // Connexion WiFi et MQTT (identique à avant)
+  WiFi.disconnect(true);
+  WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  client.setServer(mqtt_broker, mqtt_port);
+  client.setCallback([](char* t, byte* p, unsigned int l){}); // Callback vide lambda
+}
+
+void loop() {
+  if (!client.connected()) {
+    if (client.connect(("esp32-" + String(WiFi.macAddress())).c_str())) {
+        Serial.println("MQTT Reconnecté");
+    }
+  }
+  client.loop();
+
+  // 1. ACQUISITION
+  for (int k = 0; k < N; k++) {
+    Uraw[k] = analogRead(Pin_Voltage);
+    Iraw[k] = analogRead(Pin_Current);
+    delay(1);
+  }
+
+  // 2. CALCUL DES OFFSETS DC (Moyenne)
+  long sumU_DC = 0;
+  long sumI_DC = 0;
+  for (int k = 0; k < N; k++) {
+    sumU_DC += Uraw[k];
+    sumI_DC += Iraw[k];
+  }
+  float offset_U = (float)sumU_DC / N;
+  float offset_I = (float)sumI_DC / N;
+
+  // 3. CALCULS INSTANTANÉS
+  float sumV2 = 0;
+  float sumI2 = 0;
+  float sumP = 0;
+ 
+  for (int k = 0; k < N; k++) {
+    // Retrait de l'offset DC
+    float u_inst_raw = Uraw[k] - offset_U;
+    float i_inst_raw = Iraw[k] - offset_I;
+   
+    // Conversion physique (Le signe "-" de FACTOR_CURRENT agit ici)
+    float u_inst_phys = u_inst_raw * FACTOR_VOLTAGE;
+    float i_inst_phys = i_inst_raw * FACTOR_CURRENT;
+   
+    sumV2 += u_inst_phys * u_inst_phys;
+    sumI2 += i_inst_phys * i_inst_phys;
+    sumP  += u_inst_phys * i_inst_phys; // P = U * I (avec le signe corrigé)
+  }
+
+  // Calculs RMS et Puissances
+  float V_rms = sqrt(sumV2 / N);
+  float I_rms = sqrt(sumI2 / N);
+  float P_active = sumP / N;
+  float P_apparent = V_rms * I_rms;
+ 
+  // Calcul Cos Phi
+  float powerFactor = 0;
+  if (P_apparent > 0.1) { // Evite division par zero si pas de courant
+    powerFactor = P_active / P_apparent;
+  }
+ 
+  // Clamp mathématique
+  if (powerFactor > 1.0) powerFactor = 1.0;
+  if (powerFactor < -1.0) powerFactor = -1.0;
+ 
+  // Calcul Angle en degrés
+  float phase_deg = acos(powerFactor) * (180.0 / PI);
+
+  // --- APPLICATION DE LA CORRECTION DE PHASE ---
+  // Si P_active est positif (charge consommatrice), on corrige l'erreur capteur
+  // acos() renvoie toujours positif [0..180].
+  // Sur une charge résistive, si vous avez 9°, on soustrait 9°.
+ 
+  float corrected_phase = phase_deg - PHASE_ERROR_OFFSET;
+ 
+  // On s'assure que la phase reste logique (autour de 0)
+  if (corrected_phase < 0) corrected_phase = 0; // Optionnel : force à 0 si négatif léger
+ 
+  // Note : acos ne donne pas le signe (inductif/capacitif).
+  // Pour savoir si c'est + ou -, il faut une analyse plus complexe,
+  // mais pour du résistif/inductif standard (moteur, chauffage), c'est suffisant.
+
+  // Affichage Debug
+  Serial.println("--- Mesures Corrigées ---");
+  Serial.printf("P Active (W) : %.2f\n", P_active);
+  Serial.printf("Phase Brute  : %.2f Deg\n", phase_deg);
+  Serial.printf("Phase Corrigée: %.2f Deg\n", corrected_phase);
+
+  // Envoi MQTT
+  client.publish(topic_U_eff, String(V_rms).c_str());
+  client.publish(topic_I_eff, String(I_rms).c_str());
+  client.publish(topic_P_act, String(P_active).c_str());
+  client.publish(topic_P_app, String(P_apparent).c_str());
+  client.publish(topic_Phase, String(corrected_phase).c_str());
+
+  delay(1000);
+}
