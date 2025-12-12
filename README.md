@@ -3,7 +3,6 @@
 <br>
 Ce projet réalisé par des étudiants à pour objectif de réaliser un Wattmètre à partir d'un ampèrmetre et un d'un voltmètre. 
 L'association de ces deux capteurs de courant et tension altenative permet d'otenir une valeur de puissance. 
-![Logo de mon domaine](https://mondomaine.fr/logo.png)
 
 ## Materiel utilisé 
 * ESP32
@@ -13,24 +12,52 @@ L'association de ces deux capteurs de courant et tension altenative permet d'ote
 
 ## Les librairies 
 
-Concernant les capteurs :
-* "MCMVoltSense.h"
-
-Concernant l'ESP32 : 
 * <Arduino.h>
-* "PubSubClient.h"
 * "PubSubClient.h"
 * "WiFi.h"
 * "esp_wpa2.h"
 
-## Connection au WIFI 
-#define EAP_IDENTITY "ewan.michellon@etu.univ-amu.fr"
-#define EAP_PASSWORD "!"
-#define EAP_USERNAME "ewan.michellon@etu.univ-amu.fr"
+## Configuration du WIFI et MQTT 
+
+```
+#define EAP_IDENTITY ""
+#define EAP_PASSWORD ""
+#define EAP_USERNAME ""
+const char* ssid = "";
 const char* ssid = "eduroam";
-const char* ssid = "eduroam";
-## Utilisation du MQTT
+const char *mqtt_broker = "";
+const int mqtt_port = 1883;
+```
+```
+const char *topic_I_eff = "courrantefficace";
+const char *topic_U_eff = "tensionefficace";
+const char *topic_Phase = "dephasage";          
+const char *topic_P_app = "puissanceapparente";
+const char *topic_P_act = "puissanceactive";
+WiFiClient espClient;
+PubSubClient client(espClient);
+```
+
 ## Calibration des capteurs 
+
+```
+const int Pin_Voltage = 34;
+const int Pin_Current = 35;
+
+const float FACTOR_CURRENT = -0.0161;
+const float FACTOR_VOLTAGE = 0.13;
+
+const float PHASE_ERROR_OFFSET = 9.0;
+
+const int N = 100; // Echantillons
+int Uraw[N];
+int Iraw[N];
+ ```
+
+
+
+
+
 ## Traitement 
 ## Affichage 
 Les valeurs récuperées avec le programme vont être envoyées sur un Node-red. 
