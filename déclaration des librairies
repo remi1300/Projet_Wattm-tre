@@ -1,1 +1,4 @@
-
+#include <Arduino.h>
+#include "PubSubClient.h"
+#include "WiFi.h"
+#include "esp_wpa2.h"
